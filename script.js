@@ -6,6 +6,7 @@ class ScheduleManager {
         this.editingAppointment = null;
         this.dayOffs = new Set(); // Хранение выходных дней
         this.timeSlots = this.generateTimeSlots();
+        this.loadAppointments(); // Загружаем сохраненные записи
         this.init();
     }
 
@@ -147,6 +148,7 @@ class ScheduleManager {
         appointmentsToDelete.forEach(key => {
             this.deleteAppointment(key);
         });
+        this.saveAppointments(); // Сохраняем изменения
     }
 
     handleSlotClick(slot) {
@@ -262,6 +264,7 @@ class ScheduleManager {
             currentTime = nextTime.getHours().toString().padStart(2, '0') + ':' + 
                          nextTime.getMinutes().toString().padStart(2, '0');
         }
+        this.saveAppointments(); // Сохраняем изменения после удаления
     }
 
     initializeEventListeners() {
@@ -325,6 +328,7 @@ class ScheduleManager {
         const key = `${this.selectedSlot.dataset.day}-${this.selectedSlot.dataset.time}`;
         const endTime = this.calculateEndTime(this.selectedSlot.dataset.time, formData.duration);
         this.appointments.set(key, formData);
+        this.saveAppointments(); // Сохраняем изменения
         
         const slotsToExpand = formData.duration / 30;
         let currentSlot = this.selectedSlot;
@@ -429,6 +433,19 @@ class ScheduleManager {
         if (savedDayOffs) {
             this.dayOffs = new Set(JSON.parse(savedDayOffs));
         }
+    }
+
+    loadAppointments() {
+        const savedAppointments = localStorage.getItem('appointments');
+        if (savedAppointments) {
+            const appointmentsArray = JSON.parse(savedAppointments);
+            this.appointments = new Map(appointmentsArray);
+        }
+    }
+
+    saveAppointments() {
+        const appointmentsArray = Array.from(this.appointments.entries());
+        localStorage.setItem('appointments', JSON.stringify(appointmentsArray));
     }
 }
 
