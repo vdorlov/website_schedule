@@ -6,7 +6,6 @@ class ScheduleManager {
         this.editingAppointment = null;
         this.dayOffs = new Set(); // Хранение выходных дней
         this.timeSlots = this.generateTimeSlots();
-        this.loadAppointments(); // Загружаем сохраненные записи
         this.init();
     }
 
@@ -22,9 +21,11 @@ class ScheduleManager {
 
     init() {
         this.loadDayOffsState(); // Загружаем сохраненные выходные дни
+        this.loadAppointments(); // Загружаем сохраненные записи
         this.initializeSchedule();
         this.initializeEventListeners();
         this.updateWeekDisplay();
+        this.updateScheduleDisplay(); // Обновляем отображение после инициализации
     }
 
     initializeSchedule() {
@@ -425,27 +426,65 @@ class ScheduleManager {
     }
 
     saveDayOffsState() {
-        localStorage.setItem('dayOffs', JSON.stringify(Array.from(this.dayOffs)));
+        try {
+            const dayOffsArray = Array.from(this.dayOffs);
+            localStorage.setItem('dayOffs', JSON.stringify(dayOffsArray));
+        } catch (error) {
+            console.error('Ошибка при сохранении выходных дней:', error);
+        }
     }
 
     loadDayOffsState() {
         const savedDayOffs = localStorage.getItem('dayOffs');
         if (savedDayOffs) {
-            this.dayOffs = new Set(JSON.parse(savedDayOffs));
+            try {
+                const dayOffsArray = JSON.parse(savedDayOffs);
+                this.dayOffs = new Set(dayOffsArray);
+            } catch (error) {
+                console.error('Ошибка при загрузке выходных дней:', error);
+                localStorage.removeItem('dayOffs');
+                this.dayOffs = new Set();
+            }
         }
     }
 
     loadAppointments() {
         const savedAppointments = localStorage.getItem('appointments');
         if (savedAppointments) {
-            const appointmentsArray = JSON.parse(savedAppointments);
-            this.appointments = new Map(appointmentsArray);
+            try {
+                const appointmentsArray = JSON.parse(savedAppointments);
+                // Преобразуем массив обратно в Map с правильной структурой
+                this.appointments = new Map(
+                    appointmentsArray.map(([key, value]) => {
+                        return [
+                            key,
+                            {
+                                doctor: value.doctor,
+                                patient: value.patient,
+                                duration: parseInt(value.duration),
+                                confirmed: Boolean(value.confirmed)
+                            }
+                        ];
+                    })
+                );
+                // После загрузки обновляем отображение
+                this.updateScheduleDisplay();
+            } catch (error) {
+                console.error('Ошибка при загрузке записей:', error);
+                // В случае ошибки очищаем хранилище
+                localStorage.removeItem('appointments');
+                this.appointments = new Map();
+            }
         }
     }
 
     saveAppointments() {
-        const appointmentsArray = Array.from(this.appointments.entries());
-        localStorage.setItem('appointments', JSON.stringify(appointmentsArray));
+        try {
+            const appointmentsArray = Array.from(this.appointments.entries());
+            localStorage.setItem('appointments', JSON.stringify(appointmentsArray));
+        } catch (error) {
+            console.error('Ошибка при сохранении записей:', error);
+        }
     }
 }
 
