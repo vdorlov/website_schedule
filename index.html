@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Расписание стоматологической клиники</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1><i class="fas fa-tooth"></i> Расписание приёмов</h1>
+            <div class="calendar-navigation">
+                <button id="prevWeek"><i class="fas fa-chevron-left"></i></button>
+                <span id="currentWeek"></span>
+                <button id="nextWeek"><i class="fas fa-chevron-right"></i></button>
+            </div>
+        </header>
+        
+        <div class="schedule-container">
+            <div id="schedule" class="schedule"></div>
+        </div>
+    </div>
+
+    <div id="appointmentModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2><i class="fas fa-calendar-plus"></i> Запись на приём</h2>
+            <form id="appointmentForm">
+                <div class="form-group">
+                    <label for="doctor">Врач (ФИО):</label>
+                    <input type="text" id="doctor" required>
+                </div>
+                <div class="form-group">
+                    <label for="patient">Пациент (ФИО):</label>
+                    <input type="text" id="patient" required>
+                </div>
+                <div class="form-group">
+                    <label for="duration">Длительность приёма:</label>
+                    <select id="duration" required>
+                        <option value="30">30 минут</option>
+                        <option value="60">1 час</option>
+                        <option value="90">1 час 30 минут</option>
+                        <option value="120">2 часа</option>
+                    </select>
+                </div>
+                <div class="form-group checkbox">
+                    <label for="confirmed">
+                        <input type="checkbox" id="confirmed">
+                        Подтверждено пациентом
+                    </label>
+                </div>
+                <button type="submit" class="submit-btn">Сохранить</button>
+            </form>
+        </div>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html> 
