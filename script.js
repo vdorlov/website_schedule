@@ -161,6 +161,24 @@ class ScheduleManager {
         const schedule = document.getElementById('schedule');
         schedule.innerHTML = '';
 
+        // Добавляем индикаторы прокрутки для мобильных устройств
+        if (window.innerWidth <= 768) {
+            const scrollIndicator = document.createElement('div');
+            scrollIndicator.className = 'schedule-scroll-indicator';
+            
+            for (let i = 0; i < 7; i++) {
+                const dot = document.createElement('div');
+                dot.className = 'scroll-dot';
+                if (i === 0) dot.classList.add('active');
+                scrollIndicator.appendChild(dot);
+            }
+            
+            schedule.parentElement.insertBefore(scrollIndicator, schedule);
+            
+            // Добавляем обработчик прокрутки
+            schedule.addEventListener('scroll', this.handleScheduleScroll.bind(this));
+        }
+
         // Создаем колонки для каждого дня
         for (let i = 0; i < 7; i++) {
             const dayColumn = this.createDayColumn(i);
@@ -796,6 +814,33 @@ class ScheduleManager {
         connectionError.className = 'connection-error';
         connectionError.textContent = 'Потеряно соединение с сервером. Пытаемся восстановить...';
         document.body.appendChild(connectionError);
+    }
+
+    handleScheduleScroll() {
+        if (window.innerWidth <= 768) {
+            const schedule = document.getElementById('schedule');
+            const scrollPosition = schedule.scrollLeft;
+            const columnWidth = schedule.firstElementChild.offsetWidth;
+            const currentDay = Math.round(scrollPosition / columnWidth);
+            
+            // Обновляем индикаторы
+            const dots = document.querySelectorAll('.scroll-dot');
+            dots.forEach((dot, index) => {
+                dot.classList.toggle('active', index === currentDay);
+            });
+        }
+    }
+
+    // Добавляем метод для прокрутки к определенному дню
+    scrollToDay(dayIndex) {
+        if (window.innerWidth <= 768) {
+            const schedule = document.getElementById('schedule');
+            const columnWidth = schedule.firstElementChild.offsetWidth;
+            schedule.scrollTo({
+                left: columnWidth * dayIndex,
+                behavior: 'smooth'
+            });
+        }
     }
 }
 
