@@ -6,7 +6,9 @@ class ScheduleManager {
         this.editingAppointment = null;
         this.dayOffs = new Set(); // Хранение выходных дней
         this.timeSlots = this.generateTimeSlots();
+        this.db = firebase.database();
         this.init();
+        this.initializeRealtimeUpdates();
     }
 
     generateTimeSlots() {
@@ -426,36 +428,31 @@ class ScheduleManager {
     }
 
     saveDayOffsState() {
-        try {
-            const dayOffsArray = Array.from(this.dayOffs);
-            localStorage.setItem('dayOffs', JSON.stringify(dayOffsArray));
-        } catch (error) {
-            console.error('Ошибка при сохранении выходных дней:', error);
-        }
+        const dayOffsArray = Array.from(this.dayOffs);
+        this.db.ref('dayOffs').set(dayOffsArray)
+            .catch(error => {
+                console.error('Ошибка при сохранении выходных дней:', error);
+            });
     }
 
     loadDayOffsState() {
-        const savedDayOffs = localStorage.getItem('dayOffs');
-        if (savedDayOffs) {
-            try {
-                const dayOffsArray = JSON.parse(savedDayOffs);
-                this.dayOffs = new Set(dayOffsArray);
-            } catch (error) {
+        this.db.ref('dayOffs').once('value')
+            .then((snapshot) => {
+                const data = snapshot.val() || {};
+                this.dayOffs = new Set(Object.values(data));
+                this.initializeSchedule();
+            })
+            .catch(error => {
                 console.error('Ошибка при загрузке выходных дней:', error);
-                localStorage.removeItem('dayOffs');
-                this.dayOffs = new Set();
-            }
-        }
+            });
     }
 
     loadAppointments() {
-        const savedAppointments = localStorage.getItem('appointments');
-        if (savedAppointments) {
-            try {
-                const appointmentsArray = JSON.parse(savedAppointments);
-                // Преобразуем массив обратно в Map с правильной структурой
+        this.db.ref('appointments').once('value')
+            .then((snapshot) => {
+                const data = snapshot.val() || {};
                 this.appointments = new Map(
-                    appointmentsArray.map(([key, value]) => {
+                    Object.entries(data).map(([key, value]) => {
                         return [
                             key,
                             {
@@ -467,24 +464,47 @@ class ScheduleManager {
                         ];
                     })
                 );
-                // После загрузки обновляем отображение
                 this.updateScheduleDisplay();
-            } catch (error) {
+            })
+            .catch(error => {
                 console.error('Ошибка при загрузке записей:', error);
-                // В случае ошибки очищаем хранилище
-                localStorage.removeItem('appointments');
-                this.appointments = new Map();
-            }
-        }
+            });
     }
 
     saveAppointments() {
-        try {
-            const appointmentsArray = Array.from(this.appointments.entries());
-            localStorage.setItem('appointments', JSON.stringify(appointmentsArray));
-        } catch (error) {
-            console.error('Ошибка при сохранении записей:', error);
-        }
+        const appointmentsObject = Object.fromEntries(this.appointments);
+        this.db.ref('appointments').set(appointmentsObject)
+            .catch(error => {
+                console.error('Ошибка при сохранении записей:', error);
+            });
+    }
+
+    initializeRealtimeUpdates() {
+        // Слушаем изменения в записях
+        this.db.ref('appointments').on('value', (snapshot) => {
+            const data = snapshot.val() || {};
+            this.appointments = new Map(
+                Object.entries(data).map(([key, value]) => {
+                    return [
+                        key,
+                        {
+                            doctor: value.doctor,
+                            patient: value.patient,
+                            duration: parseInt(value.duration),
+                            confirmed: Boolean(value.confirmed)
+                        }
+                    ];
+                })
+            );
+            this.updateScheduleDisplay();
+        });
+
+        // Слушаем изменения в выходных днях
+        this.db.ref('dayOffs').on('value', (snapshot) => {
+            const data = snapshot.val() || {};
+            this.dayOffs = new Set(Object.values(data));
+            this.initializeSchedule();
+        });
     }
 }
 
