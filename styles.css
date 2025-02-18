@@ -6,7 +6,8 @@
     --booked-color: #ffecb3;
     --confirmed-color: #a5d6a7;
     --completed-color: #81c784;
-    --day-off-color: #ef9a9a;
+    --day-off-color: #ffebee;
+    --day-off-border: #ffcdd2;
     --modal-bg: rgba(0, 0, 0, 0.7);
     --border-color: #e0e0e0;
     --text-primary: #333;
@@ -15,6 +16,15 @@
     --shadow-md: 0 4px 6px rgba(0,0,0,0.1);
     --radius-sm: 4px;
     --radius-md: 8px;
+    --pending-color: #fff3e0;      /* Светло-оранжевый для неподтвержденных */
+    --pending-border: #ffe0b2;     /* Оранжевая рамка */
+    --confirmed-color: #e3f2fd;    /* Светло-синий для подтвержденных */
+    --confirmed-border: #90caf9;   /* Синяя рамка */
+    --completed-color: #e8f5e9;    /* Светло-зеленый для выполненных */
+    --completed-border: #a5d6a7;   /* Зеленая рамка */
+    --medical-blue: #2196F3;
+    --medical-light-blue: #90CAF9;
+    --medical-white: #FFFFFF;
 }
 
 * {
@@ -171,13 +181,20 @@ button:hover {
 }
 
 .day-off {
-    background-color: rgba(0, 0, 0, 0.1);
+    background-color: var(--day-off-color);
+    border: 1px solid var(--day-off-border);
 }
 
 .day-off .time-slot {
-    opacity: 0.5;
+    opacity: 0.7;
     cursor: not-allowed;
     pointer-events: none;
+    background-color: rgba(255, 235, 238, 0.5);
+}
+
+.day-off .schedule-header {
+    background-color: var(--day-off-border);
+    color: #d32f2f;
 }
 
 .time-slot {
@@ -189,6 +206,8 @@ button:hover {
     position: relative;
     display: flex;
     flex-direction: column;
+    will-change: transform, opacity;
+    contain: layout style paint;
 }
 
 .time-slot:hover {
@@ -210,8 +229,22 @@ button:hover {
     z-index: 1;
 }
 
-.weekend {
-    background-color: var(--weekend-color);
+.time-slot.booked {
+    background-color: var(--pending-color);
+    border: 2px solid var(--pending-border);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    min-height: 80px;
+}
+
+.time-slot.confirmed {
+    background-color: var(--confirmed-color);
+    border: 2px solid var(--confirmed-border);
+}
+
+.time-slot.completed {
+    background-color: var(--completed-color);
+    border: 2px solid var(--completed-border);
 }
 
 .booked {
@@ -269,7 +302,8 @@ button:hover {
 }
 
 .form-group input,
-.form-group select {
+.form-group select,
+.form-group textarea {
     width: 100%;
     padding: 8px;
     border: 1px solid #ddd;
@@ -277,6 +311,11 @@ button:hover {
     background: white;
     position: relative;
     z-index: 1002;
+}
+
+.form-group textarea {
+    resize: vertical;
+    min-height: 80px;
 }
 
 .checkbox {
@@ -287,6 +326,16 @@ button:hover {
 .checkbox input {
     margin-right: 10px;
     width: auto;
+}
+
+.checkbox input:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+.checkbox input:disabled + label {
+    color: var(--text-secondary);
+    cursor: not-allowed;
 }
 
 .submit-btn,
@@ -516,24 +565,47 @@ button:hover {
 }
 
 .status {
-    padding: 2px 6px;
-    border-radius: 3px;
+    padding: 4px 8px;
+    border-radius: 4px;
     font-weight: bold;
+    font-size: 12px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
 }
 
 .status.completed {
     background-color: var(--completed-color);
-    color: white;
+    border: 1px solid var(--completed-border);
+    color: #2e7d32;
+    &::before {
+        content: '✓';
+    }
 }
 
 .status.confirmed {
     background-color: var(--confirmed-color);
-    color: white;
+    border: 1px solid var(--confirmed-border);
+    color: #1976d2;
+    &::before {
+        content: '!';
+    }
 }
 
 .status.pending {
-    background-color: var(--booked-color);
-    color: #856404;
+    background-color: var(--pending-color);
+    border: 1px solid var(--pending-border);
+    color: #f57c00;
+    &::before {
+        content: '?';
+    }
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.status.pending:hover {
+    background-color: var(--pending-border);
+    transform: scale(1.05);
 }
 
 .completion-container {
@@ -606,4 +678,392 @@ button:hover {
     font-size: 24px;
     font-weight: bold;
     color: var(--primary-color);
+}
+
+/* Мобильная версия навигации */
+@media (max-width: 768px) {
+    .week-navigation {
+        flex-direction: column;
+        gap: 10px;
+        padding: 10px;
+    }
+
+    #currentWeek {
+        order: -1;
+        width: 100%;
+        text-align: center;
+        padding: 10px;
+    }
+
+    .nav-btn, .today-btn {
+        width: 100%;
+        justify-content: center;
+    }
+}
+
+/* Мобильная версия расписания */
+@media (max-width: 768px) {
+    .schedule {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    .day-column {
+        border-right: none;
+        border-bottom: 1px solid var(--border-color);
+        margin-bottom: 10px;
+    }
+
+    .schedule-header {
+        background: var(--primary-color);
+        color: white;
+        padding: 10px;
+        border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+    }
+
+    .time-slot {
+        min-height: 60px;
+        padding: 10px;
+    }
+
+    .appointment-info {
+        font-size: 14px;
+    }
+}
+
+/* Мобильная версия модального окна */
+@media (max-width: 768px) {
+    .modal-content {
+        width: 95%;
+        margin: 20px auto;
+        max-height: 90vh;
+        overflow-y: auto;
+    }
+
+    .form-group {
+        margin-bottom: 15px;
+    }
+
+    .form-group label {
+        display: block;
+        margin-bottom: 5px;
+    }
+
+    .form-group input,
+    .form-group select {
+        width: 100%;
+        padding: 10px;
+        font-size: 16px; /* Оптимальный размер для мобильных */
+    }
+
+    .checkbox label {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .submit-btn,
+    .delete-btn {
+        width: 100%;
+        margin-top: 10px;
+        padding: 12px;
+        font-size: 16px;
+    }
+}
+
+/* Улучшения для тач-устройств */
+@media (hover: none) {
+    .time-slot {
+        cursor: pointer;
+        -webkit-tap-highlight-color: transparent;
+    }
+
+    .time-slot:active {
+        background-color: var(--slot-hover);
+    }
+
+    .nav-btn:active,
+    .today-btn:active {
+        opacity: 0.8;
+    }
+
+    .completion-checkbox {
+        width: 24px;
+        height: 24px;
+    }
+}
+
+/* Улучшения для маленьких экранов */
+@media (max-width: 320px) {
+    .time-slot {
+        font-size: 12px;
+    }
+
+    .appointment-info {
+        font-size: 12px;
+    }
+
+    #currentWeek {
+        font-size: 14px;
+    }
+}
+
+/* Ориентация экрана */
+@media (orientation: landscape) and (max-height: 500px) {
+    .modal-content {
+        max-height: 85vh;
+    }
+
+    .form-group {
+        margin-bottom: 10px;
+    }
+}
+
+/* Улучшаем внешний вид карточки записи */
+.appointment-card {
+    background: white;
+    border-radius: 6px;
+    padding: 10px;
+    margin-top: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.appointment-info {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.appointment-info div {
+    font-size: 13px;
+    line-height: 1.4;
+}
+
+.appointment-status {
+    margin-top: 8px;
+    display: flex;
+    justify-content: flex-end;
+}
+
+/* Новый медицинский стиль */
+.header-title {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    padding: 15px;
+    background: linear-gradient(to right, rgba(255,255,255,0.95), rgba(255,255,255,0.8));
+    border-radius: 8px;
+    box-shadow: 0 4px 15px rgba(33, 150, 243, 0.1);
+}
+
+.medical-logo {
+    position: relative;
+    width: 50px;
+    height: 50px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    will-change: transform;
+    contain: layout style paint;
+}
+
+.medical-logo i {
+    font-size: 2em;
+    color: var(--medical-blue);
+    z-index: 2;
+    animation: glow 2s ease-in-out infinite;
+}
+
+.cross-pulse {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+}
+
+.cross-pulse::before,
+.cross-pulse::after {
+    content: '';
+    position: absolute;
+    background: var(--medical-blue);
+    border-radius: 2px;
+}
+
+.cross-pulse::before {
+    width: 2px;
+    height: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    animation: pulseVertical 2s ease-in-out infinite;
+}
+
+.cross-pulse::after {
+    width: 100%;
+    height: 2px;
+    top: 50%;
+    transform: translateY(-50%);
+    animation: pulseHorizontal 2s ease-in-out infinite;
+}
+
+.header-title h1 {
+    font-size: 2.2em;
+    color: var(--medical-blue);
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    margin: 0;
+    padding: 0;
+    position: relative;
+    animation: fadeIn 0.5s ease-out;
+}
+
+.header-line {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 2px;
+    background: linear-gradient(to right, 
+        var(--medical-blue), 
+        var(--medical-light-blue), 
+        var(--medical-blue)
+    );
+    animation: lineFlow 3s linear infinite;
+}
+
+@keyframes glow {
+    0%, 100% {
+        filter: drop-shadow(0 0 2px rgba(33, 150, 243, 0.3));
+    }
+    50% {
+        filter: drop-shadow(0 0 8px rgba(33, 150, 243, 0.6));
+    }
+}
+
+@keyframes pulseVertical {
+    0%, 100% {
+        transform: translateX(-50%) scaleY(1);
+        opacity: 0.2;
+    }
+    50% {
+        transform: translateX(-50%) scaleY(1.2);
+        opacity: 0.5;
+    }
+}
+
+@keyframes pulseHorizontal {
+    0%, 100% {
+        transform: translateY(-50%) scaleX(1);
+        opacity: 0.2;
+    }
+    50% {
+        transform: translateY(-50%) scaleX(1.2);
+        opacity: 0.5;
+    }
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes lineFlow {
+    0% {
+        background-position: -200% 0;
+    }
+    100% {
+        background-position: 200% 0;
+    }
+}
+
+/* Адаптивность */
+@media (max-width: 768px) {
+    .header-title {
+        flex-direction: row;
+        padding: 12px;
+        gap: 15px;
+    }
+
+    .header-title h1 {
+        font-size: 1.8em;
+    }
+
+    .medical-logo {
+        width: 40px;
+        height: 40px;
+    }
+}
+
+/* Оптимизация анимаций */
+@media (prefers-reduced-motion: reduce) {
+    .medical-logo i,
+    .cross-pulse,
+    .header-line {
+        animation: none;
+    }
+}
+
+/* Оптимизация для слабых устройств */
+@media (max-width: 768px) {
+    .header-line {
+        animation: none;
+    }
+    
+    .medical-logo {
+        animation: none;
+    }
+}
+
+.loading-screen {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(255, 255, 255, 0.95);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    transition: opacity 0.3s ease-out;
+}
+
+.loader {
+    width: 50px;
+    height: 50px;
+    border: 3px solid var(--medical-light-blue);
+    border-radius: 50%;
+    border-top-color: var(--medical-blue);
+    animation: spin 1s linear infinite;
+    margin-bottom: 15px;
+}
+
+.loading-screen p {
+    color: var(--medical-blue);
+    font-size: 16px;
+    font-weight: 500;
+}
+
+.error-message,
+.connection-error {
+    background: #ffebee;
+    color: #c62828;
+    padding: 15px;
+    margin: 10px;
+    border-radius: var(--radius-sm);
+    text-align: center;
+    box-shadow: var(--shadow-sm);
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
 } 

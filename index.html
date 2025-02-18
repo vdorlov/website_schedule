@@ -20,16 +20,7 @@
             appId: "1:45356164095:web:4b37afb8ea59b60c967dca"
         };
         firebase.initializeApp(firebaseConfig);
-        // Создаем глобальную ссылку на базу данных
         window.database = firebase.database();
-        // Добавляем обработчик ошибок подключения
-        window.database.ref('.info/connected').on('value', (snap) => {
-            if (snap.val() === true) {
-                console.log('Подключено к Firebase');
-            } else {
-                console.log('Отключено от Firebase');
-            }
-        });
     </script>
 </head>
 <body>
@@ -37,7 +28,14 @@
         <header>
             <div class="header-content">
                 <div class="header-left">
-                    <h1><i class="fas fa-tooth"></i> Расписание приёмов</h1>
+                    <div class="header-title">
+                        <div class="medical-logo">
+                            <div class="cross-pulse"></div>
+                            <i class="fas fa-tooth"></i>
+                        </div>
+                        <h1>Расписание приёмов</h1>
+                        <div class="header-line"></div>
+                    </div>
                 </div>
             </div>
             <div class="navigation-container">
@@ -81,6 +79,10 @@
                         <option value="120">2 часа</option>
                     </select>
                 </div>
+                <div class="form-group">
+                    <label for="comment">Комментарий:</label>
+                    <textarea id="comment" rows="3" placeholder="Дополнительная информация"></textarea>
+                </div>
                 <div class="form-group checkbox">
                     <label for="confirmed">
                         <input type="checkbox" id="confirmed">
@@ -90,6 +92,10 @@
                 <button type="submit" class="submit-btn">Сохранить</button>
             </form>
         </div>
+    </div>
+    <div id="loading-screen" class="loading-screen">
+        <div class="loader"></div>
+        <p>Загрузка расписания...</p>
     </div>
     <script src="script.js"></script>
 </body>

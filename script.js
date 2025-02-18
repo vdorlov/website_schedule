@@ -1,5 +1,31 @@
 class ScheduleManager {
     constructor() {
+        // Проверяем наличие Firebase
+        if (!window.database) {
+            console.error('Firebase не инициализирован');
+            return;
+        }
+
+        // Кэшируем DOM-элементы
+        this.scheduleElement = document.getElementById('schedule');
+        this.modalElement = document.getElementById('appointmentModal');
+        this.currentWeekElement = document.getElementById('currentWeek');
+        this.appointmentForm = document.getElementById('appointmentForm');
+        
+        // Показываем загрузочный экран
+        this.loadingScreen = document.getElementById('loading-screen');
+        if (this.loadingScreen) {
+            this.loadingScreen.style.display = 'flex';
+        }
+        
+        // Привязываем контекст для часто используемых методов
+        this.handleSlotClick = this.handleSlotClick.bind(this);
+        this.handleAppointmentSubmit = this.handleAppointmentSubmit.bind(this);
+        this.closeModal = this.closeModal.bind(this);
+        
+        // Добавляем debounce для тяжелых операций
+        this.updateScheduleDisplay = this.debounce(this.updateScheduleDisplay.bind(this), 100);
+        
         this.currentDate = new Date();
         this.appointments = new Map();
         this.selectedSlot = null;
@@ -7,8 +33,40 @@ class ScheduleManager {
         this.dayOffs = new Set(); // Хранение выходных дней
         this.timeSlots = this.generateTimeSlots();
         this.db = window.database;
-        this.init();
-        this.initializeRealtimeUpdates();
+        
+        // Инициализация с проверкой ошибок
+        try {
+            this.init();
+            this.initializeRealtimeUpdates();
+            // Скрываем загрузочный экран после успешной инициализации
+            if (this.loadingScreen) {
+                this.loadingScreen.style.display = 'none';
+            }
+        } catch (error) {
+            console.error('Ошибка инициализации:', error);
+            this.handleInitError();
+        }
+    }
+
+    // Добавляем debounce функцию
+    debounce(func, wait) {
+        let timeout;
+        return function executedFunction(...args) {
+            const later = () => {
+                clearTimeout(timeout);
+                func(...args);
+            };
+            clearTimeout(timeout);
+            timeout = setTimeout(later, wait);
+        };
+    }
+
+    // Обработка ошибок инициализации
+    handleInitError() {
+        const errorMessage = document.createElement('div');
+        errorMessage.className = 'error-message';
+        errorMessage.textContent = 'Произошла ошибка при загрузке расписания. Пожалуйста, обновите страницу.';
+        this.scheduleElement.appendChild(errorMessage);
     }
 
     async initialize() {
@@ -130,7 +188,9 @@ class ScheduleManager {
         const dayOffCheckbox = document.createElement('input');
         dayOffCheckbox.type = 'checkbox';
         dayOffCheckbox.id = `dayOff-${dayIndex}`;
+        // Проверяем только наличие дня в списке выходных
         dayOffCheckbox.checked = this.dayOffs.has(this.getDayKey(day));
+
         const dayOffLabel = document.createElement('label');
         dayOffLabel.htmlFor = `dayOff-${dayIndex}`;
         dayOffLabel.textContent = 'Выходной';
@@ -143,9 +203,6 @@ class ScheduleManager {
         headerContainer.appendChild(dateHeader);
         headerContainer.appendChild(dayOffContainer);
 
-        if (this.isWeekend(day)) {
-            column.classList.add('weekend');
-        }
         if (this.dayOffs.has(this.getDayKey(day))) {
             column.classList.add('day-off');
         }
@@ -178,38 +235,74 @@ class ScheduleManager {
         if (confirm(message)) {
             const dayKey = this.getDayKey(date);
             if (event.target.checked) {
+                // Сначала обновляем UI
                 this.dayOffs.add(dayKey);
-                this.db.ref('dayOffs').push(dayKey);
-                this.deleteAllAppointmentsForDay(dayIndex);
-            } else {
-                this.dayOffs.delete(dayKey);
-                this.db.ref('dayOffs').once('value', snapshot => {
-                    snapshot.forEach(child => {
-                        if (child.val() === dayKey) {
-                            child.ref.remove();
-                        }
+                column.classList.add('day-off');
+                
+                // Затем обновляем Firebase и удаляем записи
+                Promise.all([
+                    this.deleteAllAppointmentsForDay(dayIndex),
+                    this.saveDayOffsState()
+                ])
+                    .catch(error => {
+                        console.error('Ошибка при установке выходного дня:', error);
+                        // Откатываем изменения при ошибке
+                        this.dayOffs.delete(dayKey);
+                        column.classList.remove('day-off');
+                        event.target.checked = false;
+                        alert('Ошибка при установке выходного дня. Попробуйте еще раз.');
                     });
-                });
+            } else {
+                // Сначала обновляем UI
+                this.dayOffs.delete(dayKey);
+                column.classList.remove('day-off');
+                
+                // Затем обновляем Firebase
+                this.saveDayOffsState()
+                    .catch(error => {
+                        console.error('Ошибка при снятии выходного дня:', error);
+                        // Откатываем изменения при ошибке
+                        this.dayOffs.add(dayKey);
+                        column.classList.add('day-off');
+                        event.target.checked = true;
+                        alert('Ошибка при снятии выходного дня. Попробуйте еще раз.');
+                    });
             }
+            // Обновляем отображение сразу после изменения
             this.updateScheduleDisplay();
+        } else {
+            event.target.checked = !event.target.checked;
         }
     }
 
     deleteAllAppointmentsForDay(dayIndex) {
-        const currentDate = new Date(this.getWeekStart());
-        currentDate.setDate(currentDate.getDate() + parseInt(dayIndex));
-        const dateKey = this.getDayKey(currentDate);
-        const appointmentsToDelete = new Set();
+        return new Promise((resolve, reject) => {
+            try {
+                const currentDate = new Date(this.getWeekStart());
+                currentDate.setDate(currentDate.getDate() + parseInt(dayIndex));
+                const dateKey = this.getDayKey(currentDate);
+                const appointmentsToDelete = new Set();
 
-        this.appointments.forEach((value, key) => {
-            const [date] = key.split('-');
-            if (date === dateKey) {
-                appointmentsToDelete.add(key);
+                this.appointments.forEach((value, key) => {
+                    const [date] = key.split('-');
+                    if (date === dateKey) {
+                        appointmentsToDelete.add(key);
+                    }
+                });
+
+                const deletePromises = Array.from(appointmentsToDelete).map(key => 
+                    this.db.ref(`appointments/${key}`).remove()
+                );
+
+                Promise.all(deletePromises)
+                    .then(() => {
+                        this.updateScheduleDisplay();
+                        resolve();
+                    })
+                    .catch(reject);
+            } catch (error) {
+                reject(error);
             }
-        });
-
-        appointmentsToDelete.forEach(key => {
-            this.deleteAppointment(key);
         });
     }
 
@@ -263,8 +356,8 @@ class ScheduleManager {
 
     openEditModal(appointment) {
         const modal = document.getElementById('appointmentModal');
-        document.body.style.overflow = 'hidden'; // Запрещаем прокрутку страницы
-        // Обновляем время записи в заголовке
+        document.body.style.overflow = 'hidden';
+        
         let modalContent = modal.querySelector('.modal-content');
         let appointmentTime = modalContent.querySelector('.appointment-time');
         if (!appointmentTime) {
@@ -277,7 +370,18 @@ class ScheduleManager {
         document.getElementById('doctor').value = appointment.doctor;
         document.getElementById('patient').value = appointment.patient;
         document.getElementById('duration').value = appointment.duration;
-        document.getElementById('confirmed').checked = appointment.confirmed;
+        
+        const confirmedCheckbox = document.getElementById('confirmed');
+        confirmedCheckbox.checked = appointment.confirmed;
+        // Блокируем чекбокс подтверждения, если приём выполнен
+        if (appointment.completed) {
+            confirmedCheckbox.disabled = true;
+            // Добавляем подсказку
+            confirmedCheckbox.parentElement.title = 'Нельзя снять подтверждение с выполненного приёма';
+        } else {
+            confirmedCheckbox.disabled = false;
+            confirmedCheckbox.parentElement.removeAttribute('title');
+        }
         
         const submitBtn = modal.querySelector('.submit-btn');
         submitBtn.textContent = 'Сохранить изменения';
@@ -325,6 +429,14 @@ class ScheduleManager {
         document.getElementById('prevWeek').addEventListener('click', () => this.navigateWeek(-1));
         document.getElementById('nextWeek').addEventListener('click', () => this.navigateWeek(1));
         document.getElementById('todayBtn').addEventListener('click', () => this.goToToday());
+
+        // Добавляем обработчик клика вне модального окна
+        const modal = document.getElementById('appointmentModal');
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                this.closeModal();
+            }
+        });
     }
 
     handleAppointmentSubmit() {
@@ -333,6 +445,7 @@ class ScheduleManager {
             patient: document.getElementById('patient').value,
             duration: parseInt(document.getElementById('duration').value),
             confirmed: document.getElementById('confirmed').checked,
+            comment: document.getElementById('comment').value || '',
             completed: false
         };
 
@@ -424,7 +537,6 @@ class ScheduleManager {
             const timeLabel = document.createElement('div');
             timeLabel.className = 'time-label';
             timeLabel.textContent = slot.dataset.time;
-            slot.innerHTML = '';
             slot.appendChild(timeLabel);
 
             const slotDate = new Date(this.getWeekStart());
@@ -464,10 +576,11 @@ class ScheduleManager {
                             <div>Врач: ${appointment.doctor}</div>
                             <div>Пациент: ${appointment.patient}</div>
                             <div>Длительность: ${appointment.duration} мин</div>
+                            ${appointment.comment ? `<div>Комментарий: ${appointment.comment}</div>` : ''}
                             <div class="appointment-status">
                                 ${appointment.completed ? '<span class="status completed">Выполнен</span>' : 
                                   appointment.confirmed ? '<span class="status confirmed">Подтверждён</span>' : 
-                                  '<span class="status pending">Не подтверждён</span>'}
+                                  '<span class="status pending" data-appointment-key="' + key + '">Не подтверждён</span>'}
                             </div>
                         </div>
                     </div>
@@ -480,6 +593,15 @@ class ScheduleManager {
                     newCheckbox.addEventListener('click', (e) => {
                         e.stopPropagation();
                         this.handleAppointmentCompletion(key, appointment, e.target);
+                    });
+                }
+
+                // Добавляем обработчик для статуса "Не подтверждён"
+                const pendingStatus = slot.querySelector('.status.pending');
+                if (pendingStatus) {
+                    pendingStatus.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        this.handleConfirmationStatus(key, appointment);
                     });
                 }
             }
@@ -517,11 +639,11 @@ class ScheduleManager {
     }
 
     saveDayOffsState() {
-        const dayOffsArray = Array.from(this.dayOffs);
-        return this.db.ref('dayOffs').set(dayOffsArray)
+        return this.db.ref('dayOffs').set(Array.from(this.dayOffs))
             .catch(error => {
                 console.error('Ошибка при сохранении выходных дней:', error);
                 alert('Ошибка при сохранении выходного дня. Попробуйте еще раз.');
+                throw error; // Пробрасываем ошибку дальше
             });
     }
 
@@ -562,13 +684,8 @@ class ScheduleManager {
     }
 
     initializeRealtimeUpdates() {
-        // Отписываемся от предыдущих слушателей, если они были
-        this.db.ref('appointments').off();
-        this.db.ref('dayOffs').off();
-
         this.db.ref('appointments').on('value', (snapshot) => {
             const data = snapshot.val() || {};
-            console.log('Получены данные записей:', data);
             this.appointments = new Map(
                 Object.entries(data).map(([key, value]) => [
                     key,
@@ -581,20 +698,15 @@ class ScheduleManager {
                     }
                 ])
             );
-            console.log('Обновлен Map записей:', this.appointments);
             this.updateScheduleDisplay();
-        }, (error) => {
-            console.error('Ошибка при получении записей:', error);
         });
 
         this.db.ref('dayOffs').on('value', (snapshot) => {
             const data = snapshot.val() || {};
-            console.log('Получены данные выходных:', data);
             this.dayOffs = new Set(Object.values(data));
-            console.log('Обновлен Set выходных:', this.dayOffs);
+            // Полностью перестраиваем расписание при изменении выходных дней
+            this.initializeSchedule();
             this.updateScheduleDisplay();
-        }, (error) => {
-            console.error('Ошибка при получении выходных дней:', error);
         });
     }
 
@@ -615,25 +727,75 @@ class ScheduleManager {
     }
 
     handleAppointmentCompletion(key, appointment, checkbox) {
-        const currentState = checkbox.checked;
-        checkbox.checked = !currentState;
+        // Сохраняем текущее состояние чекбокса
+        const newState = checkbox.checked;
 
         if (!appointment.confirmed) {
             alert('Нельзя отметить как выполненный неподтверждённый приём');
+            checkbox.checked = false;
             return;
         }
 
-        const message = !currentState ? 
+        const message = newState ? 
             'Поставить отметку о выполнении приёма?' : 
             'Снять отметку о выполнении приёма?';
 
         if (confirm(message)) {
             // Обновляем напрямую в Firebase
-            this.db.ref(`appointments/${key}/completed`).set(!currentState)
+            this.db.ref(`appointments/${key}/completed`).set(newState)
                 .then(() => {
                     // Обновление произойдет автоматически через слушатель
+                    appointment.completed = newState;
+                    // Обновляем визуальное состояние слота
+                    const slot = checkbox.closest('.time-slot');
+                    if (newState) {
+                        slot.classList.add('completed');
+                    } else {
+                        slot.classList.remove('completed');
+                    }
                 });
+        } else {
+            // Если пользователь отменил действие, возвращаем чекбокс в предыдущее состояние
+            checkbox.checked = !newState;
         }
+    }
+
+    handleConfirmationStatus(key, appointment) {
+        // Проверяем, не выполнен ли приём
+        if (appointment.completed) {
+            alert('Нельзя снять подтверждение с выполненного приёма');
+            return;
+        }
+        
+        const message = !appointment.confirmed ? 
+            'Прием подтвержден пациентом?' : 
+            'Снять подтверждение приема?';
+        
+        if (confirm(message)) {
+            // Обновляем статус в Firebase
+            this.db.ref(`appointments/${key}`).update({ 
+                confirmed: !appointment.confirmed 
+            }).then(() => { 
+                // Обновляем локальные данные
+                appointment.confirmed = !appointment.confirmed;
+                // Если снимаем подтверждение, то снимаем и отметку о выполнении
+                if (!appointment.confirmed && appointment.completed) {
+                    this.db.ref(`appointments/${key}`).update({ completed: false });
+                }
+                // Обновление отображения произойдет автоматически через слушатель Firebase
+            }).catch(error => {
+                console.error('Ошибка при подтверждении приема:', error);
+                alert('Ошибка при подтверждении приема. Попробуйте еще раз.');
+            });
+        }
+    }
+
+    // Обработка ошибок соединения
+    handleConnectionError() {
+        const connectionError = document.createElement('div');
+        connectionError.className = 'connection-error';
+        connectionError.textContent = 'Потеряно соединение с сервером. Пытаемся восстановить...';
+        document.body.appendChild(connectionError);
     }
 }
 
