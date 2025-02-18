@@ -6,9 +6,80 @@ class ScheduleManager {
         this.editingAppointment = null;
         this.dayOffs = new Set(); // Хранение выходных дней
         this.timeSlots = this.generateTimeSlots();
-        this.db = firebase.database();
+        this.db = window.database;
         this.init();
         this.initializeRealtimeUpdates();
+    }
+
+    async initialize() {
+        try {
+            // Инициализируем базовый интерфейс
+            this.init();
+            
+            // Устанавливаем слушатели Firebase
+            this.db.ref('appointments').on('value', (snapshot) => {
+                const data = snapshot.val() || {};
+                this.appointments = new Map(
+                    Object.entries(data).map(([key, value]) => [
+                        key,
+                        {
+                            doctor: value.doctor,
+                            patient: value.patient,
+                            duration: parseInt(value.duration),
+                            confirmed: Boolean(value.confirmed),
+                            completed: Boolean(value.completed)
+                        }
+                    ])
+                );
+                this.updateScheduleDisplay();
+            });
+
+            this.db.ref('dayOffs').on('value', (snapshot) => {
+                const data = snapshot.val() || {};
+                this.dayOffs = new Set(Object.values(data));
+                this.updateScheduleDisplay();
+            });
+        } catch (error) {
+            console.error('Ошибка при инициализации:', error);
+        }
+    }
+
+    loadInitialData(path) {
+        return new Promise((resolve, reject) => {
+            this.db.ref(path).once('value')
+                .then((snapshot) => {
+                    try {
+                        const data = snapshot.val() || {};
+
+                        if (path === 'appointments') {
+                            this.appointments = new Map(
+                                Object.entries(data).map(([key, value]) => [
+                                    key,
+                                    {
+                                        doctor: value?.doctor || '',
+                                        patient: value?.patient || '',
+                                        duration: parseInt(value?.duration || 30),
+                                        confirmed: Boolean(value?.confirmed),
+                                        completed: Boolean(value?.completed)
+                                    }
+                                ])
+                            );
+                        } else if (path === 'dayOffs') {
+                            this.dayOffs = new Set(Object.values(data));
+                        }
+                        resolve();
+                    } catch (error) {
+                        console.error('Ошибка при обработке данных:', error);
+                        if (path === 'appointments') {
+                            this.appointments = new Map();
+                        } else if (path === 'dayOffs') {
+                            this.dayOffs = new Set();
+                        }
+                        resolve();
+                    }
+                })
+                .catch(reject);
+        });
     }
 
     generateTimeSlots() {
@@ -22,12 +93,10 @@ class ScheduleManager {
     }
 
     init() {
-        this.loadDayOffsState(); // Загружаем сохраненные выходные дни
-        this.loadAppointments(); // Загружаем сохраненные записи
         this.initializeSchedule();
         this.initializeEventListeners();
         this.updateWeekDisplay();
-        this.updateScheduleDisplay(); // Обновляем отображение после инициализации
+        this.updateScheduleDisplay();
     }
 
     initializeSchedule() {
@@ -107,43 +176,34 @@ class ScheduleManager {
             'Вы уверены, что хотите сделать этот день рабочим?';
 
         if (confirm(message)) {
+            const dayKey = this.getDayKey(date);
             if (event.target.checked) {
-                column.classList.add('day-off');
-                this.dayOffs.add(this.getDayKey(date));
-                // Удаляем все записи для этого дня
+                this.dayOffs.add(dayKey);
+                this.db.ref('dayOffs').push(dayKey);
                 this.deleteAllAppointmentsForDay(dayIndex);
             } else {
-                column.classList.remove('day-off');
-                this.dayOffs.delete(this.getDayKey(date));
-                // Восстанавливаем возможность записи
-                const slots = column.querySelectorAll('.time-slot');
-                slots.forEach(slot => {
-                    slot.style.pointerEvents = 'auto';
-                    slot.style.opacity = '1';
-                    slot.style.cursor = 'pointer';
+                this.dayOffs.delete(dayKey);
+                this.db.ref('dayOffs').once('value', snapshot => {
+                    snapshot.forEach(child => {
+                        if (child.val() === dayKey) {
+                            child.ref.remove();
+                        }
+                    });
                 });
             }
-            this.saveDayOffsState(); // Сохраняем состояние выходных дней
-        } else {
-            event.target.checked = !event.target.checked;
-            // Восстанавливаем предыдущее состояние колонки
-            if (!event.target.checked) {
-                column.classList.remove('day-off');
-                const slots = column.querySelectorAll('.time-slot');
-                slots.forEach(slot => {
-                    slot.style.pointerEvents = 'auto';
-                    slot.style.opacity = '1';
-                    slot.style.cursor = 'pointer';
-                });
-            }
+            this.updateScheduleDisplay();
         }
     }
 
     deleteAllAppointmentsForDay(dayIndex) {
+        const currentDate = new Date(this.getWeekStart());
+        currentDate.setDate(currentDate.getDate() + parseInt(dayIndex));
+        const dateKey = this.getDayKey(currentDate);
         const appointmentsToDelete = new Set();
+
         this.appointments.forEach((value, key) => {
-            const [day] = key.split('-');
-            if (day === dayIndex.toString()) {
+            const [date] = key.split('-');
+            if (date === dateKey) {
                 appointmentsToDelete.add(key);
             }
         });
@@ -151,7 +211,6 @@ class ScheduleManager {
         appointmentsToDelete.forEach(key => {
             this.deleteAppointment(key);
         });
-        this.saveAppointments(); // Сохраняем изменения
     }
 
     handleSlotClick(slot) {
@@ -163,7 +222,11 @@ class ScheduleManager {
         }
 
         this.selectedSlot = slot;
-        const key = `${slot.dataset.day}-${slot.dataset.time}`;
+        // Создаем уникальный ключ для записи, включающий дату
+        const slotDate = new Date(this.getWeekStart());
+        slotDate.setDate(slotDate.getDate() + parseInt(slot.dataset.day));
+        const dateKey = this.getDayKey(slotDate);
+        const key = `${dateKey}-${slot.dataset.time}`;
         const appointment = this.appointments.get(key);
 
         if (appointment) {
@@ -243,31 +306,13 @@ class ScheduleManager {
         }
     }
 
-    deleteAppointment(startKey) {
-        const [day, time] = startKey.split('-');
-        const appointment = this.appointments.get(startKey);
-        const slotsToDelete = appointment.duration / 30;
-        
-        let currentTime = time;
-        for (let i = 0; i < slotsToDelete; i++) {
-            const key = `${day}-${currentTime}`;
-            this.appointments.delete(key);
-            
-            // Находим и восстанавливаем скрытые слоты
-            const slot = document.querySelector(`.time-slot[data-day="${day}"][data-time="${currentTime}"]`);
-            if (slot) {
-                slot.style.display = '';
-                slot.className = 'time-slot';
-                slot.innerHTML = `<div class="time-label">${currentTime}</div>`;
-            }
-            
-            // Вычисляем следующее время
-            const [hours, minutes] = currentTime.split(':').map(Number);
-            const nextTime = new Date(2000, 0, 1, hours, minutes + 30);
-            currentTime = nextTime.getHours().toString().padStart(2, '0') + ':' + 
-                         nextTime.getMinutes().toString().padStart(2, '0');
-        }
-        this.saveAppointments(); // Сохраняем изменения после удаления
+    deleteAppointment(key) {
+        // Удаляем запись из Firebase
+        this.db.ref(`appointments/${key}`).remove()
+            .catch(error => {
+                console.error('Ошибка при удалении записи:', error);
+                alert('Ошибка при удалении записи. Попробуйте еще раз.');
+            });
     }
 
     initializeEventListeners() {
@@ -277,9 +322,9 @@ class ScheduleManager {
         });
 
         document.querySelector('.close').addEventListener('click', () => this.closeModal());
-
         document.getElementById('prevWeek').addEventListener('click', () => this.navigateWeek(-1));
         document.getElementById('nextWeek').addEventListener('click', () => this.navigateWeek(1));
+        document.getElementById('todayBtn').addEventListener('click', () => this.goToToday());
     }
 
     handleAppointmentSubmit() {
@@ -287,13 +332,31 @@ class ScheduleManager {
             doctor: document.getElementById('doctor').value,
             patient: document.getElementById('patient').value,
             duration: parseInt(document.getElementById('duration').value),
-            confirmed: document.getElementById('confirmed').checked
+            confirmed: document.getElementById('confirmed').checked,
+            completed: false
         };
 
         if (this.validateAppointment(formData)) {
-            this.saveAppointment(formData);
-            this.closeModal();
-            this.updateScheduleDisplay();
+            const slotDate = new Date(this.getWeekStart());
+            slotDate.setDate(slotDate.getDate() + parseInt(this.selectedSlot.dataset.day));
+            const dateKey = this.getDayKey(slotDate);
+            const key = `${dateKey}-${this.selectedSlot.dataset.time}`;
+            
+            // Сначала обновляем локальный Map
+            this.appointments.set(key, formData);
+            
+            // Затем сохраняем в Firebase с обработкой ошибок
+            this.db.ref(`appointments/${key}`).set(formData)
+                .then(() => {
+                    console.log('Запись успешно сохранена:', key);
+                    this.closeModal();
+                })
+                .catch(error => {
+                    console.error('Ошибка при сохранении:', error);
+                    // Удаляем из локального Map, если сохранение не удалось
+                    this.appointments.delete(key);
+                    alert('Ошибка при сохранении записи. Попробуйте еще раз.');
+                });
         }
     }
 
@@ -307,11 +370,14 @@ class ScheduleManager {
         let currentSlot = startSlot;
 
         for (let i = 0; i < slotsNeeded && currentSlot; i++) {
-            const key = `${currentSlot.dataset.day}-${currentSlot.dataset.time}`;
+            const slotDate = new Date(this.getWeekStart());
+            slotDate.setDate(slotDate.getDate() + parseInt(currentSlot.dataset.day));
+            const dateKey = this.getDayKey(slotDate);
+            const key = `${dateKey}-${currentSlot.dataset.time}`;
             if (this.appointments.has(key)) {
                 alert('Выбранное время пересекается с существующей записью');
                 if (this.editingAppointment) {
-                    this.saveAppointment(this.editingAppointment.appointment, this.editingAppointment.key);
+                    this.saveAppointment(this.editingAppointment.appointment);
                 }
                 return false;
             }
@@ -319,7 +385,7 @@ class ScheduleManager {
             if (!currentSlot && i < slotsNeeded - 1) {
                 alert('Недостаточно свободного времени');
                 if (this.editingAppointment) {
-                    this.saveAppointment(this.editingAppointment.appointment, this.editingAppointment.key);
+                    this.saveAppointment(this.editingAppointment.appointment);
                 }
                 return false;
             }
@@ -327,36 +393,20 @@ class ScheduleManager {
         return true;
     }
 
-    saveAppointment(formData) {
-        const key = `${this.selectedSlot.dataset.day}-${this.selectedSlot.dataset.time}`;
-        const endTime = this.calculateEndTime(this.selectedSlot.dataset.time, formData.duration);
-        this.appointments.set(key, formData);
-        this.saveAppointments(); // Сохраняем изменения
-        
-        const slotsToExpand = formData.duration / 30;
-        let currentSlot = this.selectedSlot;
-        
-        for (let i = 0; i < slotsToExpand && currentSlot; i++) {
-            currentSlot.className = 'time-slot booked';
-            if (i === 0) {
-                if (formData.confirmed) {
-                    currentSlot.classList.add('confirmed');
-                }
-                currentSlot.innerHTML = `
-                    <div class="time-label">Время: ${currentSlot.dataset.time} - ${endTime}</div>
-                    <div class="appointment-card">
-                        <div class="appointment-info">
-                            <div>Врач: ${formData.doctor}</div>
-                            <div>Пациент: ${formData.patient}</div>
-                            <div>Длительность: ${formData.duration} мин</div>
-                        </div>
-                    </div>
-                `;
-            } else {
-                currentSlot.style.display = 'none';
-            }
-            currentSlot = currentSlot.nextElementSibling;
-        }
+    saveAppointments() {
+        return new Promise((resolve, reject) => {
+            const appointmentsObject = {};
+            this.appointments.forEach((value, key) => {
+                appointmentsObject[key] = value;
+            });
+            
+            this.db.ref('appointments').set(appointmentsObject)
+                .then(resolve)
+                .catch(error => {
+                    console.error('Ошибка при сохранении записей:', error);
+                    reject(error);
+                });
+        });
     }
 
     calculateEndTime(startTime, duration) {
@@ -369,24 +419,69 @@ class ScheduleManager {
     updateScheduleDisplay() {
         const slots = document.querySelectorAll('.time-slot');
         slots.forEach(slot => {
-            const key = `${slot.dataset.day}-${slot.dataset.time}`;
+            slot.className = 'time-slot';
+            slot.style.display = '';
+            const timeLabel = document.createElement('div');
+            timeLabel.className = 'time-label';
+            timeLabel.textContent = slot.dataset.time;
+            slot.innerHTML = '';
+            slot.appendChild(timeLabel);
+
+            const slotDate = new Date(this.getWeekStart());
+            slotDate.setDate(slotDate.getDate() + parseInt(slot.dataset.day));
+            const dateKey = this.getDayKey(slotDate);
+            const key = `${dateKey}-${slot.dataset.time}`;
             const appointment = this.appointments.get(key);
+
             if (appointment) {
                 const endTime = this.calculateEndTime(slot.dataset.time, appointment.duration);
                 slot.className = 'time-slot booked';
                 if (appointment.confirmed) {
                     slot.classList.add('confirmed');
                 }
+                if (appointment.completed) {
+                    slot.classList.add('completed');
+                }
+
+                // Добавляем чекбокс для отметки о выполнении
+                const completionCheckbox = document.createElement('input');
+                completionCheckbox.type = 'checkbox';
+                completionCheckbox.className = 'completion-checkbox';
+                completionCheckbox.checked = appointment.completed;
+                completionCheckbox.addEventListener('click', (e) => {
+                    // Останавливаем всплытие события
+                    e.stopPropagation();
+                    this.handleAppointmentCompletion(key, appointment, e.target);
+                });
+
                 slot.innerHTML = `
                     <div class="time-label">Время: ${slot.dataset.time} - ${endTime}</div>
+                    <div class="completion-container">
+                        ${appointment.confirmed ? completionCheckbox.outerHTML : ''}
+                    </div>
                     <div class="appointment-card">
                         <div class="appointment-info">
                             <div>Врач: ${appointment.doctor}</div>
                             <div>Пациент: ${appointment.patient}</div>
                             <div>Длительность: ${appointment.duration} мин</div>
+                            <div class="appointment-status">
+                                ${appointment.completed ? '<span class="status completed">Выполнен</span>' : 
+                                  appointment.confirmed ? '<span class="status confirmed">Подтверждён</span>' : 
+                                  '<span class="status pending">Не подтверждён</span>'}
+                            </div>
                         </div>
                     </div>
                 `;
+
+                // Восстанавливаем обработчик для чекбокса после обновления HTML
+                const newCheckbox = slot.querySelector('.completion-checkbox');
+                if (newCheckbox) {
+                    newCheckbox.checked = appointment.completed;
+                    newCheckbox.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        this.handleAppointmentCompletion(key, appointment, e.target);
+                    });
+                }
             }
         });
     }
@@ -408,12 +503,6 @@ class ScheduleManager {
         return day === 0 || day === 6;
     }
 
-    navigateWeek(direction) {
-        this.currentDate.setDate(this.currentDate.getDate() + (direction * 7));
-        this.initializeSchedule(); // Перерисовываем расписание для обновления статусов выходных дней
-        this.updateWeekDisplay();
-    }
-
     updateWeekDisplay() {
         const weekStart = this.getWeekStart();
         const weekEnd = new Date(weekStart);
@@ -429,9 +518,10 @@ class ScheduleManager {
 
     saveDayOffsState() {
         const dayOffsArray = Array.from(this.dayOffs);
-        this.db.ref('dayOffs').set(dayOffsArray)
+        return this.db.ref('dayOffs').set(dayOffsArray)
             .catch(error => {
                 console.error('Ошибка при сохранении выходных дней:', error);
+                alert('Ошибка при сохранении выходного дня. Попробуйте еще раз.');
             });
     }
 
@@ -471,40 +561,79 @@ class ScheduleManager {
             });
     }
 
-    saveAppointments() {
-        const appointmentsObject = Object.fromEntries(this.appointments);
-        this.db.ref('appointments').set(appointmentsObject)
-            .catch(error => {
-                console.error('Ошибка при сохранении записей:', error);
-            });
-    }
-
     initializeRealtimeUpdates() {
-        // Слушаем изменения в записях
+        // Отписываемся от предыдущих слушателей, если они были
+        this.db.ref('appointments').off();
+        this.db.ref('dayOffs').off();
+
         this.db.ref('appointments').on('value', (snapshot) => {
             const data = snapshot.val() || {};
+            console.log('Получены данные записей:', data);
             this.appointments = new Map(
-                Object.entries(data).map(([key, value]) => {
-                    return [
-                        key,
-                        {
-                            doctor: value.doctor,
-                            patient: value.patient,
-                            duration: parseInt(value.duration),
-                            confirmed: Boolean(value.confirmed)
-                        }
-                    ];
-                })
+                Object.entries(data).map(([key, value]) => [
+                    key,
+                    {
+                        doctor: value.doctor,
+                        patient: value.patient,
+                        duration: parseInt(value.duration),
+                        confirmed: Boolean(value.confirmed),
+                        completed: Boolean(value.completed)
+                    }
+                ])
             );
+            console.log('Обновлен Map записей:', this.appointments);
             this.updateScheduleDisplay();
+        }, (error) => {
+            console.error('Ошибка при получении записей:', error);
         });
 
-        // Слушаем изменения в выходных днях
         this.db.ref('dayOffs').on('value', (snapshot) => {
             const data = snapshot.val() || {};
+            console.log('Получены данные выходных:', data);
             this.dayOffs = new Set(Object.values(data));
-            this.initializeSchedule();
+            console.log('Обновлен Set выходных:', this.dayOffs);
+            this.updateScheduleDisplay();
+        }, (error) => {
+            console.error('Ошибка при получении выходных дней:', error);
         });
+    }
+
+    navigateWeek(direction) {
+        const newDate = new Date(this.currentDate);
+        newDate.setDate(newDate.getDate() + (direction * 7));
+        this.currentDate = newDate;
+        this.initializeSchedule();
+        this.updateWeekDisplay();
+        this.updateScheduleDisplay();
+    }
+
+    goToToday() {
+        this.currentDate = new Date();
+        this.initializeSchedule();
+        this.updateWeekDisplay();
+        this.updateScheduleDisplay();
+    }
+
+    handleAppointmentCompletion(key, appointment, checkbox) {
+        const currentState = checkbox.checked;
+        checkbox.checked = !currentState;
+
+        if (!appointment.confirmed) {
+            alert('Нельзя отметить как выполненный неподтверждённый приём');
+            return;
+        }
+
+        const message = !currentState ? 
+            'Поставить отметку о выполнении приёма?' : 
+            'Снять отметку о выполнении приёма?';
+
+        if (confirm(message)) {
+            // Обновляем напрямую в Firebase
+            this.db.ref(`appointments/${key}/completed`).set(!currentState)
+                .then(() => {
+                    // Обновление произойдет автоматически через слушатель
+                });
+        }
     }
 }
 
