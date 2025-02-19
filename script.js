@@ -163,17 +163,17 @@ class ScheduleManager {
 
         // Добавляем индикаторы прокрутки для мобильных устройств
         if (window.innerWidth <= 768) {
-            const scrollIndicator = document.createElement('div');
-            scrollIndicator.className = 'schedule-scroll-indicator';
+            const scrollIndicators = document.createElement('div');
+            scrollIndicators.className = 'scroll-indicators';
             
             for (let i = 0; i < 7; i++) {
                 const dot = document.createElement('div');
                 dot.className = 'scroll-dot';
                 if (i === 0) dot.classList.add('active');
-                scrollIndicator.appendChild(dot);
+                scrollIndicators.appendChild(dot);
             }
             
-            schedule.parentElement.insertBefore(scrollIndicator, schedule);
+            schedule.parentElement.insertBefore(scrollIndicators, schedule);
             
             // Добавляем обработчик прокрутки
             schedule.addEventListener('scroll', this.handleScheduleScroll.bind(this));

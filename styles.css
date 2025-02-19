@@ -173,6 +173,82 @@ body {
         padding: 6px 10px;
         font-size: 13px;
     }
+
+    .schedule-container {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scroll-snap-type: x mandatory;
+        padding-bottom: 10px;
+    }
+
+    #schedule {
+        display: flex;
+        flex-direction: row;
+        min-width: min-content;
+        gap: 10px;
+    }
+
+    .day-column {
+        flex: 0 0 90vw;
+        scroll-snap-align: start;
+        background: white;
+        border-radius: var(--radius-md);
+        box-shadow: var(--shadow-sm);
+        padding: 10px;
+        margin-right: 10px;
+    }
+
+    .day-column:last-child {
+        margin-right: 0;
+    }
+
+    .schedule-header {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        background: var(--primary-color);
+        color: white;
+        padding: 12px;
+        border-radius: var(--radius-sm);
+        margin-bottom: 10px;
+    }
+
+    .time-slot {
+        margin-bottom: 8px;
+        padding: 12px;
+        border-radius: var(--radius-sm);
+    }
+
+    /* Добавляем индикаторы прокрутки */
+    .scroll-indicators {
+        display: flex;
+        justify-content: center;
+        gap: 8px;
+        margin: 10px 0;
+    }
+
+    .scroll-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--border-color);
+        transition: background-color 0.3s;
+    }
+
+    .scroll-dot.active {
+        background: var(--primary-color);
+    }
+
+    /* Улучшаем читаемость информации о записи */
+    .appointment-info {
+        font-size: 14px;
+        line-height: 1.4;
+    }
+
+    .time-label {
+        font-size: 12px;
+        font-weight: bold;
+    }
 }
 
 @media (max-width: 480px) {
